@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gophercises/quiet_hn/hn"
+	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 )
 
 func main() {
