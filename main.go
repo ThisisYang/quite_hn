@@ -3,14 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 	"html/template"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 )
 
 func main() {
@@ -39,22 +39,15 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 		}
 		var stories []item
 		respChan := make(chan *hn.ItemChan)
+		// done channel to close the goroutine
+		done := make(chan struct{})
+		var wg sync.WaitGroup
 		defer close(respChan)
 		for _, id := range ids {
-			go client.GetItemByChan(id, respChan)
-
-			// hnItem, err := client.GetItem(id)
-			// if err != nil {
-			// 	continue
-			// }
-			// item := parseHNItem(hnItem)
-			// if isStoryLink(item) {
-			// 	stories = append(stories, item)
-			// 	if len(stories) >= numStories {
-			// 		break
-			// 	}
-			// }
+			wg.Add(1)
+			go client.GetItemByChan(id, respChan, done, &wg)
 		}
+
 		for resp := range respChan {
 			if resp.Err != nil {
 				continue
@@ -63,15 +56,26 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			if isStoryLink(item) {
 				stories = append(stories, item)
 				if len(stories) >= numStories {
+					// case we received enough resp, close done
+					close(done)
 					break
 				}
 			}
 		}
+
+		// if put wg.Wait() here, it will be slower
+		// wg.Wait()
+
 		data := templateData{
 			Stories: stories,
 			Time:    time.Now().Sub(start),
 		}
 		err = tpl.Execute(w, data)
+
+		// wait for all goroutine before response
+		wg.Wait()
+		fmt.Println("all goroutine are done")
+
 		if err != nil {
 			http.Error(w, "Failed to process the template", http.StatusInternalServerError)
 			return

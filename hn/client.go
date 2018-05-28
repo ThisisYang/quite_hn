@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 const (
@@ -55,10 +56,17 @@ type ItemChan struct {
 }
 
 // GetItemByChan will call GetItem and send result back via channel
-func (c *Client) GetItemByChan(id int, itemChan chan<- *ItemChan) {
+func (c *Client) GetItemByChan(id int, itemChan chan<- *ItemChan, done <-chan struct{}, wg *sync.WaitGroup) {
+	defer wg.Done()
 	hnItem, err := c.GetItem(id)
 	resp := ItemChan{Item: hnItem, Err: err}
-	itemChan <- &resp
+	select {
+	case <-done:
+		return
+	default:
+		itemChan <- &resp
+	}
+
 }
 
 // GetItem will return the Item defined by the provided ID.
