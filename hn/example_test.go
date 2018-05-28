@@ -6,7 +6,7 @@ package hn_test
 import (
 	"fmt"
 
-	"github.com/gophercises/quiet_hn/hn"
+	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 )
 
 func ExampleClient() {
@@ -22,4 +22,19 @@ func ExampleClient() {
 		}
 		fmt.Printf("%s (by %s)\n", item.Title, item.By)
 	}
+}
+
+// This is the doc part of the TopItems of Client type
+// the func name should be: ExampleClient_TopItems
+func ExampleClient_TopItems() {
+	fmt.Println("hello")
+	// output:
+	// hello
+}
+
+// This is the doc part of the example
+func ExampleItem() {
+	fmt.Println("hello")
+	// output:
+	// hello
 }

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gophercises/quiet_hn/hn"
+	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 )
 
 func main() {
@@ -38,12 +38,28 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			return
 		}
 		var stories []item
+		respChan := make(chan *hn.ItemChan)
+		defer close(respChan)
 		for _, id := range ids {
-			hnItem, err := client.GetItem(id)
-			if err != nil {
+			go client.GetItemByChan(id, respChan)
+
+			// hnItem, err := client.GetItem(id)
+			// if err != nil {
+			// 	continue
+			// }
+			// item := parseHNItem(hnItem)
+			// if isStoryLink(item) {
+			// 	stories = append(stories, item)
+			// 	if len(stories) >= numStories {
+			// 		break
+			// 	}
+			// }
+		}
+		for resp := range respChan {
+			if resp.Err != nil {
 				continue
 			}
-			item := parseHNItem(hnItem)
+			item := parseHNItem(resp.Item)
 			if isStoryLink(item) {
 				stories = append(stories, item)
 				if len(stories) >= numStories {

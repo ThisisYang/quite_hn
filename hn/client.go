@@ -47,6 +47,20 @@ func (c *Client) TopItems() ([]int, error) {
 	return ids, nil
 }
 
+// ItemChan represents response from GetItem.
+// Will be used for sending GetItem response back via channel
+type ItemChan struct {
+	Item Item
+	Err  error
+}
+
+// GetItemByChan will call GetItem and send result back via channel
+func (c *Client) GetItemByChan(id int, itemChan chan<- *ItemChan) {
+	hnItem, err := c.GetItem(id)
+	resp := ItemChan{Item: hnItem, Err: err}
+	itemChan <- &resp
+}
+
 // GetItem will return the Item defined by the provided ID.
 func (c *Client) GetItem(id int) (Item, error) {
 	c.defaultify()
