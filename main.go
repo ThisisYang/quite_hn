@@ -8,9 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/gophercises/quiet_hn/hn"
+	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 )
 
 func main() {
@@ -22,10 +23,74 @@ func main() {
 
 	tpl := template.Must(template.ParseFiles("./index.gohtml"))
 
-	http.HandleFunc("/", handler(numStories, tpl))
+	http.HandleFunc("/", newHandler(numStories, tpl))
 
 	// Start the server
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
+}
+
+func newHandler(numStories int, tpl *template.Template) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		var client hn.Client
+		ids, err := client.TopItems()
+		if err != nil {
+			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
+			return
+		}
+
+		var stories []item
+		respStories := make([]item, len(ids))
+		var wg sync.WaitGroup
+		c := make(chan hn.RespItem)
+		defer close(c)
+		for seq, id := range ids {
+			wg.Add(1)
+			go client.GetItemByChan(id, seq, c, &wg)
+		}
+		fmt.Println("range channel")
+		count := 0
+		for resp := range c {
+			count++
+			if resp.Err != nil {
+				continue
+			}
+			item := parseHNItem(resp.Item)
+			if isStoryLink(item) {
+				respStories[resp.Seq] = item
+				// stories = append(stories, item)
+				// if len(stories) >= numStories {
+				// 	break
+				// }
+			}
+			if count == 500 {
+				break
+			}
+		}
+		fmt.Println("waiting for goroutine")
+		wg.Wait()
+		fmt.Println("wait done")
+		for _, s := range respStories {
+			if len(stories) >= numStories {
+				break
+			}
+			// previously, we insert item to respStories by using Seq as index
+			// if say id=3 is not story, respStoreis[3] should be nil?
+			if s.Host == "" {
+				continue
+			}
+			stories = append(stories, s)
+		}
+		data := templateData{
+			Stories: stories,
+			Time:    time.Now().Sub(start),
+		}
+		err = tpl.Execute(w, data)
+		if err != nil {
+			http.Error(w, "Failed to process the template", http.StatusInternalServerError)
+			return
+		}
+	})
 }
 
 func handler(numStories int, tpl *template.Template) http.HandlerFunc {

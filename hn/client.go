@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 const (
@@ -45,6 +46,21 @@ func (c *Client) TopItems() ([]int, error) {
 		return nil, err
 	}
 	return ids, nil
+}
+
+// RespItem represents a response which will be sent back
+type RespItem struct {
+	Seq  int
+	Item Item
+	Err  error
+}
+
+// GetItemByChan wraps the GetItem
+func (c *Client) GetItemByChan(id, seq int, respChan chan<- RespItem, wg *sync.WaitGroup) {
+	defer wg.Done()
+	hnItem, err := c.GetItem(id)
+	respChan <- RespItem{Seq: seq, Item: hnItem, Err: err}
+
 }
 
 // GetItem will return the Item defined by the provided ID.
