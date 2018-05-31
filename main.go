@@ -1,16 +1,18 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
-
-	"github.com/ThisisYang/gophercises/quiet_hn/hn"
 )
 
 func main() {
@@ -31,25 +33,10 @@ func main() {
 func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		var client hn.Client
-		ids, err := client.TopItems()
+		stories, err := getStories(numStories)
 		if err != nil {
-			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-		var stories []item
-		for _, id := range ids {
-			hnItem, err := client.GetItem(id)
-			if err != nil {
-				continue
-			}
-			item := parseHNItem(hnItem)
-			if isStoryLink(item) {
-				stories = append(stories, item)
-				if len(stories) >= numStories {
-					break
-				}
-			}
 		}
 		data := templateData{
 			Stories: stories,
@@ -61,6 +48,70 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			return
 		}
 	})
+}
+
+func getStories(numStories int) ([]item, error) {
+	var client hn.Client
+	ids, err := client.TopItems()
+	if err != nil {
+		return nil, errors.New("Failed to load top stories")
+	}
+	var stories []item
+	for len(stories) < 30 {
+		missing := numStories - len(stories)
+		ratio := 1.25
+		r := float64(missing) * ratio
+		retrieveNum := int(math.Max(r, 1.0))
+		fmt.Println("retrieve: ", retrieveNum)
+		retrieveIDs := ids[0:retrieveNum]
+		gotStories, err := getPartialStories(retrieveIDs, &client)
+		ids = ids[retrieveNum:]
+		if err != nil {
+			continue
+		}
+		fmt.Println("got :", len(gotStories))
+		for _, s := range gotStories {
+			stories = append(stories, s)
+			if len(stories) == 30 {
+				break
+			}
+		}
+	}
+
+	return stories, nil
+}
+
+// getPartialStories will spawn number of workers = len(partialIDs)
+// return items which are only valid (no error, only story)
+func getPartialStories(partialIDs []int, client *hn.Client) ([]item, error) {
+
+	workerNum := len(partialIDs)
+	pool := NewPool(workerNum, client)
+	defer pool.Stop()
+
+	for seq, id := range partialIDs {
+		job := Job{HnID: id, Seq: seq}
+		JobQueue <- job
+	}
+	var tmp []Result
+	var partialStories []item
+
+	for i := 0; i < workerNum; i++ {
+		r := <-ResultQueue
+		if r.Err != nil {
+			continue
+		}
+		if isStoryLink(r.Item) {
+			tmp = append(tmp, r)
+		}
+	}
+	sort.Slice(tmp, func(i, j int) bool {
+		return tmp[i].Job.Seq < tmp[j].Job.Seq
+	})
+	for _, res := range tmp {
+		partialStories = append(partialStories, res.Item)
+	}
+	return partialStories, nil
 }
 
 func isStoryLink(item item) bool {
