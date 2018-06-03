@@ -43,22 +43,6 @@ func (p *Pool) Stop() {
 }
 
 func (p *Pool) dispatch() {
-	// This for loop will block:
-	// 1. if there is no jobChan (worker) available
-	// eventually, leads to block JobQueue
-	// as no worker pickup the job, but producer keeps push the job
-	/*
-		for {
-			job := <-JobQueue
-			select {
-			case jobChan := <-p.PoolChan:
-				jobChan <- job
-			case <-p.Quit:
-				return
-			}
-		}
-	*/
-
 	for {
 		select {
 		case job := <-JobQueue:

@@ -51,17 +51,22 @@ func (c *Client) TopItems() ([]int, error) {
 func (c *Client) GetItem(id int) (Item, error) {
 	c.defaultify()
 	var item Item
-	resp, err := http.Get(fmt.Sprintf("%s/item/%d.json", c.apiBase, id))
+	cachedItem, err := cache.Get(id)
 	if err != nil {
-		return item, err
+		resp, err := http.Get(fmt.Sprintf("%s/item/%d.json", c.apiBase, id))
+		if err != nil {
+			return item, err
+		}
+		defer resp.Body.Close()
+		dec := json.NewDecoder(resp.Body)
+		err = dec.Decode(&item)
+		cache.Put(id, &item)
+		if err != nil {
+			return item, err
+		}
+		return item, nil
 	}
-	defer resp.Body.Close()
-	dec := json.NewDecoder(resp.Body)
-	err = dec.Decode(&item)
-	if err != nil {
-		return item, err
-	}
-	return item, nil
+	return *cachedItem, nil
 }
 
 // Item represents a single item returned by the HN API. This can have a type

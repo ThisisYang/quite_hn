@@ -21,19 +21,22 @@ func main() {
 	flag.IntVar(&port, "port", 3000, "the port to start the web server on")
 	flag.IntVar(&numStories, "num_stories", 30, "the number of top stories to display")
 	flag.Parse()
+	var client hn.Client
+	pool := NewPool(numStories, &client)
+	defer pool.Stop()
 
 	tpl := template.Must(template.ParseFiles("./index.gohtml"))
 
-	http.HandleFunc("/", handler(numStories, tpl))
+	http.HandleFunc("/", handler(numStories, tpl, &client))
 
 	// Start the server
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }
 
-func handler(numStories int, tpl *template.Template) http.HandlerFunc {
+func handler(numStories int, tpl *template.Template, client *hn.Client) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		stories, err := getStories(numStories)
+		stories, err := getStories(client, numStories)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -50,8 +53,7 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 	})
 }
 
-func getStories(numStories int) ([]item, error) {
-	var client hn.Client
+func getStories(client *hn.Client, numStories int) ([]item, error) {
 	ids, err := client.TopItems()
 	if err != nil {
 		return nil, errors.New("Failed to load top stories")
@@ -62,14 +64,12 @@ func getStories(numStories int) ([]item, error) {
 		ratio := 1.25
 		r := float64(missing) * ratio
 		retrieveNum := int(math.Max(r, 1.0))
-		fmt.Println("retrieve: ", retrieveNum)
 		retrieveIDs := ids[0:retrieveNum]
-		gotStories, err := getPartialStories(retrieveIDs, &client)
+		gotStories, err := getPartialStories(retrieveIDs)
 		ids = ids[retrieveNum:]
 		if err != nil {
 			continue
 		}
-		fmt.Println("got :", len(gotStories))
 		for _, s := range gotStories {
 			stories = append(stories, s)
 			if len(stories) == 30 {
@@ -77,19 +77,15 @@ func getStories(numStories int) ([]item, error) {
 			}
 		}
 	}
-
 	return stories, nil
 }
 
 // getPartialStories will spawn number of workers = len(partialIDs)
 // return items which are only valid (no error, only story)
-func getPartialStories(partialIDs []int, client *hn.Client) ([]item, error) {
-
+func getPartialStories(partialIDs []int) ([]item, error) {
 	workerNum := len(partialIDs)
-	pool := NewPool(workerNum, client)
-	defer pool.Stop()
-
 	for seq, id := range partialIDs {
+
 		job := Job{HnID: id, Seq: seq}
 		JobQueue <- job
 	}
